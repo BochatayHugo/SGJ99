@@ -40,4 +40,6 @@ public class PlayerController : MonoBehaviour
         stateMachine.setInfos(input,crouchPressed);
         stateMachine.Update();
     }
-}
+
+
+    }

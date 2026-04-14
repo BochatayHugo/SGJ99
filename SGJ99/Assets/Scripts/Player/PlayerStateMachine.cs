@@ -201,5 +201,10 @@ public class PlayerStateMachine
             verticalVelocity += gravity * Time.deltaTime;
         }
     }
+
+    private void Interact()
+    {
+        
+    }
 }
 
