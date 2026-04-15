@@ -43,7 +43,6 @@ public class PlayerStateMachine
 
     public void Update()
     {
-        Debug.Log("Current State: " + currentState);
         ApplyGravity();
         switch (currentState)
         {
