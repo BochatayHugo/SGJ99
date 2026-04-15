@@ -2,53 +2,68 @@ using UnityEngine;
 using System;
 
 /// <summary>
-/// Generates a random wave event at game start and evaluates the player's responses.
-/// Broadcasts events so all UI panels can react independently.
+/// Orchestrates the endless day-by-day gameplay loop.
+/// Each day generates a new wave. The player must either:
+///   - Submit calibrated settings via OKBtn (if no evacuation needed), or
+///   - Press the evacuation button (if values exceed controllable range).
+/// A successful day unlocks the PRO_Lit to start the next day.
 /// </summary>
 public class WaveGameManager : MonoBehaviour
 {
     [Header("Data")]
     [SerializeField] private WaveDataSO waveData;
 
-    // ── Events ───────────────────────────────────────────────────────────────
+    // ── Events ────────────────────────────────────────────────────────────────
 
-    /// <summary>Fired once after wave data is generated.</summary>
+    /// <summary>Fired once after wave data is generated for a new day.</summary>
     public static event Action<WaveDataSO> OnWaveDataGenerated;
 
-    /// <summary>Fired when the game ends. True = evacuation needed, False = false alarm.</summary>
+    /// <summary>Fired when the player submits and the day succeeds. Payload = current day number.</summary>
+    public static event Action<int> OnDaySuccess;
+
+    /// <summary>Fired when the player loses. Carries the reason.</summary>
     public static event Action<GameOverReason> OnGameOver;
 
-    // ── State ────────────────────────────────────────────────────────────────
+    // ── State ─────────────────────────────────────────────────────────────────
 
-    private bool playerSubmitted = false;
+    private int  currentDay       = 0;
+    private bool playerSubmitted  = false;
+    private bool daySucceeded     = false;
+
+    /// <summary>Whether the player cleared the current day and may interact with PRO_Lit.</summary>
+    public bool CanAdvanceToNextDay => daySucceeded;
+
+    /// <summary>Current day number (1-based).</summary>
+    public int CurrentDay => currentDay;
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     private void Start()
     {
-        GenerateWave();
+        StartDay(1);
     }
 
-    /// <summary>Generates random wave data and broadcasts it to all listeners.</summary>
-    public void GenerateWave()
-    {
-        waveData.waveHeight = RoundToStep(UnityEngine.Random.Range(5, 51), 5);
-        waveData.waveAngle  = RoundToStep(UnityEngine.Random.Range(0, 181), 10);
-        waveData.pressureValue = UnityEngine.Random.Range(1, 321);
-        waveData.epicenterZoneIndex = UnityEngine.Random.Range(0, 16);
+    // ── Public API ────────────────────────────────────────────────────────────
 
-        playerSubmitted = false;
-        OnWaveDataGenerated?.Invoke(waveData);
+    /// <summary>
+    /// Called by PRO_Lit interaction to advance to the next day.
+    /// Only works when the current day has been successfully cleared.
+    /// </summary>
+    public void AdvanceToNextDay()
+    {
+        if (!daySucceeded) return;
+        StartDay(currentDay + 1);
     }
 
     /// <summary>
     /// Called by DeskController when the player submits their settings.
-    /// wallAngle and wallHeight are the values the player dialed in.
-    /// pressureCombination is the bitmask of the 4 buttons the player activated.
-    /// evacuationPressed indicates whether the player hit the evacuation button.
+    /// evacuationPressed = true  → player used the evacuation button.
+    /// evacuationPressed = false → player used the OKBtn to confirm calibration.
     /// </summary>
     public void SubmitPlayerResponse(
-        int wallAngle,
-        int wallHeight,
-        int pressureCombination,
+        int  wallAngle,
+        int  wallHeight,
+        int  pressureCombination,
         bool evacuationPressed)
     {
         if (playerSubmitted) return;
@@ -58,31 +73,61 @@ public class WaveGameManager : MonoBehaviour
 
         if (evacuationPressed)
         {
-            if (!evacuationRequired)
+            if (evacuationRequired)
             {
-                OnGameOver?.Invoke(GameOverReason.FalseAlarm);
+                SucceedDay();
             }
             else
             {
-                // Evacuation was valid — could trigger a success state
-                OnGameOver?.Invoke(GameOverReason.EvacuationSuccess);
+                OnGameOver?.Invoke(GameOverReason.FalseAlarm);
             }
             return;
         }
 
-        // Player did not evacuate — check each value
-        bool angleCorrect    = wallAngle == waveData.waveAngle;
-        bool heightCorrect   = wallHeight == waveData.waveHeight;
-        bool pressureCorrect = pressureCombination == waveData.RequiredPressureCombination;
-
-        if (!angleCorrect || !heightCorrect || !pressureCorrect || evacuationRequired)
+        // Player pressed OK without evacuating
+        if (evacuationRequired)
         {
             OnGameOver?.Invoke(GameOverReason.CityDestroyed);
+            return;
+        }
+
+        bool angleCorrect    = wallAngle           == waveData.waveAngle;
+        bool heightCorrect   = wallHeight          == waveData.waveHeight;
+        bool pressureCorrect = pressureCombination == waveData.RequiredPressureCombination;
+
+        if (angleCorrect && heightCorrect && pressureCorrect)
+        {
+            SucceedDay();
         }
         else
         {
-            OnGameOver?.Invoke(GameOverReason.Success);
+            OnGameOver?.Invoke(GameOverReason.CityDestroyed);
         }
+    }
+
+    // ── Private ───────────────────────────────────────────────────────────────
+
+    private void StartDay(int day)
+    {
+        currentDay      = day;
+        playerSubmitted = false;
+        daySucceeded    = false;
+        GenerateWave();
+    }
+
+    private void GenerateWave()
+    {
+        waveData.waveHeight         = RoundToStep(UnityEngine.Random.Range(5, 51), 5);
+        waveData.waveAngle          = RoundToStep(UnityEngine.Random.Range(0, 181), 10);
+        waveData.pressureValue      = UnityEngine.Random.Range(1, 321);
+        waveData.epicenterZoneIndex = UnityEngine.Random.Range(0, 16);
+        OnWaveDataGenerated?.Invoke(waveData);
+    }
+
+    private void SucceedDay()
+    {
+        daySucceeded = true;
+        OnDaySuccess?.Invoke(currentDay);
     }
 
     private int RoundToStep(int value, int step)
@@ -93,8 +138,7 @@ public class WaveGameManager : MonoBehaviour
 
 public enum GameOverReason
 {
-    Success,
-    CityDestroyed,  // Player failed to act correctly
-    FalseAlarm,     // Player evacuated when not needed → fired
+    CityDestroyed,
+    FalseAlarm,
     EvacuationSuccess
 }

@@ -61,6 +61,10 @@ public class BoardDisplay : MonoBehaviour
 
         waveLineRenderer.positionCount = waveResolution;
 
+        // Thicker line for better readability on the board
+        waveLineRenderer.startWidth = 0.04f;
+        waveLineRenderer.endWidth   = 0.04f;
+
         for (int i = 0; i < waveResolution; i++)
         {
             float t = i / (float)(waveResolution - 1);

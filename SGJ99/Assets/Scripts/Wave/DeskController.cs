@@ -25,12 +25,12 @@ public class DeskController : MonoBehaviour
     [SerializeField] private TextMeshProUGUI angleDisplayText;
 
     [Header("Height Lever")]
-    [Tooltip("The lever pivot Transform — assign LeverBase.")]
-    [SerializeField] private Transform heightLever;
-    [Tooltip("Lever rotation in degrees at minimum height (5m).")]
-    [SerializeField] private float minLeverAngle = -45f;
-    [Tooltip("Lever rotation in degrees at maximum height (50m).")]
-    [SerializeField] private float maxLeverAngle =  45f;
+    [Tooltip("The lever STICK Transform only — LeverBase stays fixed, only LeverStick rotates.")]
+    [SerializeField] private Transform heightLeverStick;
+    [Tooltip("Lever rotation in degrees at minimum height (5m). Positive = forward tilt.")]
+    [SerializeField] private float minLeverAngle = 45f;
+    [Tooltip("Lever rotation in degrees at maximum height (50m). Negative = back tilt.")]
+    [SerializeField] private float maxLeverAngle = -45f;
     [Tooltip("TextMeshProUGUI inside HeightScreen/HeightCanvas/HeightText.")]
     [SerializeField] private TextMeshProUGUI heightDisplayText;
 
@@ -44,6 +44,12 @@ public class DeskController : MonoBehaviour
     [SerializeField] private Renderer evacuationButtonRenderer;
     [SerializeField] private Material evacuationReadyMaterial;
     [SerializeField] private Material evacuationPressedMaterial;
+
+    [Header("OK Button")]
+    [Tooltip("The OKBtn renderer — player presses E to confirm settings.")]
+    [SerializeField] private Renderer okButtonRenderer;
+    [SerializeField] private Material okReadyMaterial;
+    [SerializeField] private Material okPressedMaterial;
 
     [Header("Interaction")]
     [SerializeField] private float interactDistance = 3f;
@@ -71,7 +77,7 @@ public class DeskController : MonoBehaviour
     // Hovered control type
     private HoverTarget currentHover = HoverTarget.None;
 
-    private enum HoverTarget { None, AngleKnob, HeightLever, PressureBtn0, PressureBtn1, PressureBtn2, PressureBtn3, EvacuationBtn }
+    private enum HoverTarget { None, AngleKnob, HeightLever, PressureBtn0, PressureBtn1, PressureBtn2, PressureBtn3, EvacuationBtn, OKBtn }
 
     private void Start()
     {
@@ -105,14 +111,21 @@ public class DeskController : MonoBehaviour
 
     private void OnWaveDataReceived(WaveDataSO data)
     {
-        evacuated        = false;
-        pressureBitmask  = 0;
-        currentWallAngle = AngleMin;
+        evacuated         = false;
+        pressureBitmask   = 0;
+        currentWallAngle  = AngleMin;
         currentWallHeight = HeightMin;
         RefreshAngleDisplay();
         RefreshHeightDisplay();
         RefreshPressureButtons();
         RefreshEvacuationButton();
+        RefreshOKButton();
+
+        // Reset lever and knob visual to starting position
+        if (heightLeverStick != null)
+            heightLeverStick.localEulerAngles = new Vector3(minLeverAngle, 0f, 0f);
+        if (angleKnob != null)
+            angleKnob.localEulerAngles = new Vector3(0f, 0f, AngleMin);
     }
 
     private void Update()
@@ -145,8 +158,8 @@ public class DeskController : MonoBehaviour
 
     private HoverTarget IdentifyHoverTarget(GameObject go)
     {
-        if (angleKnob   != null && go == angleKnob.gameObject)   return HoverTarget.AngleKnob;
-        if (heightLever != null && go == heightLever.gameObject)  return HoverTarget.HeightLever;
+        if (angleKnob   != null && go == angleKnob.gameObject)        return HoverTarget.AngleKnob;
+        if (heightLeverStick != null && go == heightLeverStick.gameObject) return HoverTarget.HeightLever;
 
         for (int i = 0; i < pressureButtonRenderers.Length; i++)
             if (pressureButtonRenderers[i] != null && go == pressureButtonRenderers[i].gameObject)
@@ -154,6 +167,9 @@ public class DeskController : MonoBehaviour
 
         if (evacuationButtonRenderer != null && go == evacuationButtonRenderer.gameObject)
             return HoverTarget.EvacuationBtn;
+
+        if (okButtonRenderer != null && go == okButtonRenderer.gameObject)
+            return HoverTarget.OKBtn;
 
         return HoverTarget.None;
     }
@@ -208,6 +224,10 @@ public class DeskController : MonoBehaviour
             case HoverTarget.EvacuationBtn:
                 TriggerEvacuation();
                 break;
+
+            case HoverTarget.OKBtn:
+                TriggerOK();
+                break;
         }
     }
 
@@ -220,8 +240,8 @@ public class DeskController : MonoBehaviour
 
         if (angleKnob != null)
         {
-            // Knob rotates on its Z axis to visually represent the angle
-            angleKnob.localEulerAngles = new Vector3(0f, 0f, -currentWallAngle);
+            // Positive scroll → knob turns clockwise (positive Z rotation)
+            angleKnob.localEulerAngles = new Vector3(0f, 0f, currentWallAngle);
         }
     }
 
@@ -238,11 +258,13 @@ public class DeskController : MonoBehaviour
         currentWallHeight = Mathf.Clamp(currentWallHeight + direction * HeightStep, HeightMin, HeightMax);
         RefreshHeightDisplay();
 
-        if (heightLever != null)
+        if (heightLeverStick != null)
         {
+            // Only the stick rotates; LeverBase stays fixed.
+            // Scroll up → lever tilts forward (positive X), scroll down → backward.
             float t = Mathf.InverseLerp(HeightMin, HeightMax, currentWallHeight);
             float leverAngle = Mathf.Lerp(minLeverAngle, maxLeverAngle, t);
-            heightLever.localEulerAngles = new Vector3(leverAngle, 0f, 0f);
+            heightLeverStick.localEulerAngles = new Vector3(leverAngle, 0f, 0f);
         }
     }
 
@@ -290,7 +312,21 @@ public class DeskController : MonoBehaviour
             evacuationButtonRenderer.material = evacuationReadyMaterial;
     }
 
-    // ── Submit (called externally or by a confirm button) ─────────────────────
+    // ── OK button ─────────────────────────────────────────────────────────────
+
+    private void TriggerOK()
+    {
+        if (okButtonRenderer != null)
+            okButtonRenderer.material = okPressedMaterial;
+
+        gameManager.SubmitPlayerResponse(currentWallAngle, currentWallHeight, pressureBitmask, false);
+    }
+
+    private void RefreshOKButton()
+    {
+        if (okButtonRenderer != null)
+            okButtonRenderer.material = okReadyMaterial;
+    }
 
     /// <summary>Submits the current settings without evacuation.</summary>
     public void SubmitSettings()

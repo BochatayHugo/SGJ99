@@ -4,16 +4,15 @@ using TMPro;
 /// <summary>
 /// Listens for game over events and displays the appropriate message on a UI canvas.
 /// Attach to a dedicated GameOver canvas GameObject.
+/// Superseded by DayUIManager — kept for standalone use if needed.
 /// </summary>
 public class GameOverDisplay : MonoBehaviour
 {
     [SerializeField] private GameObject gameOverCanvas;
     [SerializeField] private TMP_Text   gameOverText;
 
-    private static readonly string MsgCityDestroyed     = "TOUTE LA VILLE A ÉTÉ DÉCIMÉE.\nVous avez échoué.";
-    private static readonly string MsgFalseAlarm        = "FAUSSE ALERTE.\nVous avez été renvoyé.";
-    private static readonly string MsgEvacuationSuccess = "ÉVACUATION RÉUSSIE.\nBien joué.";
-    private static readonly string MsgSuccess           = "PROTECTION ACTIVÉE.\nLa ville est sauvée.";
+    private static readonly string MsgCityDestroyed = "TOUTE LA VILLE A ÉTÉ DÉCIMÉE.\nVous avez échoué.";
+    private static readonly string MsgFalseAlarm    = "FAUSSE ALERTE.\nVous avez été renvoyé.";
 
     private void OnEnable()
     {
@@ -40,11 +39,9 @@ public class GameOverDisplay : MonoBehaviour
 
         gameOverText.text = reason switch
         {
-            GameOverReason.CityDestroyed      => MsgCityDestroyed,
-            GameOverReason.FalseAlarm         => MsgFalseAlarm,
-            GameOverReason.EvacuationSuccess  => MsgEvacuationSuccess,
-            GameOverReason.Success            => MsgSuccess,
-            _                                 => string.Empty
+            GameOverReason.CityDestroyed => MsgCityDestroyed,
+            GameOverReason.FalseAlarm    => MsgFalseAlarm,
+            _                            => string.Empty
         };
     }
 }
