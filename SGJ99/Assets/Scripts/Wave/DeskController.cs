@@ -27,12 +27,17 @@ public class DeskController : MonoBehaviour
     [Header("Height Lever")]
     [Tooltip("The lever STICK Transform only — LeverBase stays fixed, only LeverStick rotates.")]
     [SerializeField] private Transform heightLeverStick;
-    [Tooltip("Lever rotation in degrees at minimum height (5m). Positive = forward tilt.")]
-    [SerializeField] private float minLeverAngle = 45f;
-    [Tooltip("Lever rotation in degrees at maximum height (50m). Negative = back tilt.")]
-    [SerializeField] private float maxLeverAngle = -45f;
+    [Tooltip("Axis of rotation in LeverStick LOCAL space used to tilt the lever. Default (1,0,0) = local X.")]
+    [SerializeField] private Vector3 leverRotationAxis = Vector3.right;
+    [Tooltip("Angle offset in degrees applied at MINIMUM height. 0 = lever stays exactly at its scene position.")]
+    [SerializeField] private float minLeverAngle = 0f;
+    [Tooltip("Angle offset in degrees applied at MAXIMUM height.")]
+    [SerializeField] private float maxLeverAngle = 40f;
     [Tooltip("TextMeshProUGUI inside HeightScreen/HeightCanvas/HeightText.")]
     [SerializeField] private TextMeshProUGUI heightDisplayText;
+
+    // Rotation de repos du LeverStick, capturée à l'Awake avant toute modification.
+    private Quaternion leverRestRotation;
 
     [Header("Pressure Buttons")]
     [Tooltip("4 button renderers (index 0–3 = button 1–4).")]
@@ -56,6 +61,8 @@ public class DeskController : MonoBehaviour
     [SerializeField] private float aimTolerance = 0.12f;
     [SerializeField] private Camera playerCamera;
     [SerializeField] private GameObject interactCanvas;
+    [Tooltip("Canvas affiché spécifiquement quand on survole le levier hauteur ou le bouton angle.")]
+    [SerializeField] private GameObject mouseInteractCanvas;
 
     // ── State ────────────────────────────────────────────────────────────────
 
@@ -79,6 +86,13 @@ public class DeskController : MonoBehaviour
 
     private enum HoverTarget { None, AngleKnob, HeightLever, PressureBtn0, PressureBtn1, PressureBtn2, PressureBtn3, EvacuationBtn, OKBtn }
 
+    private void Awake()
+    {
+        // Capture la rotation d'origine du levier avant que quoi que ce soit ne la modifie.
+        if (heightLeverStick != null)
+            leverRestRotation = heightLeverStick.localRotation;
+    }
+
     private void Start()
     {
         if (playerCamera == null)
@@ -97,6 +111,7 @@ public class DeskController : MonoBehaviour
         RefreshPressureButtons();
         RefreshEvacuationButton();
         SetCanvasVisible(false);
+        SetMouseCanvasVisible(false);
     }
 
     private void OnEnable()
@@ -122,10 +137,9 @@ public class DeskController : MonoBehaviour
         RefreshOKButton();
 
         // Reset lever and knob visual to starting position
-        if (heightLeverStick != null)
-            heightLeverStick.localEulerAngles = new Vector3(minLeverAngle, 0f, 0f);
+        ApplyLeverRotation(HeightMin);
         if (angleKnob != null)
-            angleKnob.localEulerAngles = new Vector3(0f, 0f, AngleMin);
+            angleKnob.localEulerAngles = new Vector3(0f, -AngleMin, 0f);
     }
 
     private void Update()
@@ -152,7 +166,13 @@ public class DeskController : MonoBehaviour
         if (newHover != currentHover)
         {
             currentHover = newHover;
-            SetCanvasVisible(currentHover != HoverTarget.None);
+
+            // MouseCanvasInteract pour levier et knob angle, CanvasInteract pour le reste
+            bool isScrollTarget = currentHover == HoverTarget.HeightLever || currentHover == HoverTarget.AngleKnob;
+            bool isAnyTarget    = currentHover != HoverTarget.None;
+
+            SetMouseCanvasVisible(isScrollTarget);
+            SetCanvasVisible(isAnyTarget && !isScrollTarget);
         }
     }
 
@@ -240,8 +260,9 @@ public class DeskController : MonoBehaviour
 
         if (angleKnob != null)
         {
-            // Positive scroll → knob turns clockwise (positive Z rotation)
-            angleKnob.localEulerAngles = new Vector3(0f, 0f, currentWallAngle);
+            // Knob rotates on local Y axis. Scroll up → counter-clockwise (negative Y).
+            // Flip the sign here if the physical knob parent is oriented differently.
+            angleKnob.localEulerAngles = new Vector3(0f, -currentWallAngle, 0f);
         }
     }
 
@@ -253,19 +274,27 @@ public class DeskController : MonoBehaviour
 
     // ── Height lever ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Applique la rotation du levier en additionnant un offset angulaire
+    /// sur leverRotationAxis (espace local du LeverStick), depuis sa rotation de repos.
+    /// Utilise des quaternions — aucune conversion Euler, aucune dérive possible.
+    /// </summary>
+    private void ApplyLeverRotation(int height)
+    {
+        if (heightLeverStick == null) return;
+
+        float t = Mathf.InverseLerp(HeightMin, HeightMax, height);
+        float angleDeg = Mathf.Lerp(minLeverAngle, maxLeverAngle, t);
+
+        // leverRestRotation * delta local = rotation finale dans l'espace parent.
+        heightLeverStick.localRotation = leverRestRotation * Quaternion.AngleAxis(angleDeg, leverRotationAxis.normalized);
+    }
+
     private void AdjustHeight(int direction)
     {
         currentWallHeight = Mathf.Clamp(currentWallHeight + direction * HeightStep, HeightMin, HeightMax);
         RefreshHeightDisplay();
-
-        if (heightLeverStick != null)
-        {
-            // Only the stick rotates; LeverBase stays fixed.
-            // Scroll up → lever tilts forward (positive X), scroll down → backward.
-            float t = Mathf.InverseLerp(HeightMin, HeightMax, currentWallHeight);
-            float leverAngle = Mathf.Lerp(minLeverAngle, maxLeverAngle, t);
-            heightLeverStick.localEulerAngles = new Vector3(leverAngle, 0f, 0f);
-        }
+        ApplyLeverRotation(currentWallHeight);
     }
 
     private void RefreshHeightDisplay()
@@ -340,5 +369,11 @@ public class DeskController : MonoBehaviour
     {
         if (interactCanvas != null)
             interactCanvas.SetActive(visible);
+    }
+
+    private void SetMouseCanvasVisible(bool visible)
+    {
+        if (mouseInteractCanvas != null)
+            mouseInteractCanvas.SetActive(visible);
     }
 }

@@ -1,5 +1,7 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using System;
+using System.Collections;
 
 /// <summary>
 /// Orchestrates the endless day-by-day gameplay loop.
@@ -7,11 +9,18 @@ using System;
 ///   - Submit calibrated settings via OKBtn (if no evacuation needed), or
 ///   - Press the evacuation button (if values exceed controllable range).
 /// A successful day unlocks the PRO_Lit to start the next day.
+/// After a game over, returns to the main menu after a delay.
 /// </summary>
 public class WaveGameManager : MonoBehaviour
 {
     [Header("Data")]
     [SerializeField] private WaveDataSO waveData;
+
+    [Header("Menu Settings")]
+    [Tooltip("Nom exact de la scène du menu principal (dans Build Settings).")]
+    [SerializeField] private string mainMenuSceneName = "MainMenu";
+    [Tooltip("Délai en secondes avant le retour au menu après un game over.")]
+    [SerializeField] private float gameOverReturnDelay = 4f;
 
     // ── Events ────────────────────────────────────────────────────────────────
 
@@ -80,6 +89,7 @@ public class WaveGameManager : MonoBehaviour
             else
             {
                 OnGameOver?.Invoke(GameOverReason.FalseAlarm);
+                StartCoroutine(ReturnToMainMenuAfterDelay());
             }
             return;
         }
@@ -88,6 +98,7 @@ public class WaveGameManager : MonoBehaviour
         if (evacuationRequired)
         {
             OnGameOver?.Invoke(GameOverReason.CityDestroyed);
+            StartCoroutine(ReturnToMainMenuAfterDelay());
             return;
         }
 
@@ -102,6 +113,7 @@ public class WaveGameManager : MonoBehaviour
         else
         {
             OnGameOver?.Invoke(GameOverReason.CityDestroyed);
+            StartCoroutine(ReturnToMainMenuAfterDelay());
         }
     }
 
@@ -128,6 +140,12 @@ public class WaveGameManager : MonoBehaviour
     {
         daySucceeded = true;
         OnDaySuccess?.Invoke(currentDay);
+    }
+
+    private IEnumerator ReturnToMainMenuAfterDelay()
+    {
+        yield return new WaitForSeconds(gameOverReturnDelay);
+        SceneManager.LoadScene(mainMenuSceneName);
     }
 
     private int RoundToStep(int value, int step)
